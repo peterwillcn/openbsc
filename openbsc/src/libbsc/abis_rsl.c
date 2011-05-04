@@ -98,6 +98,8 @@ struct gsm_lchan *lchan_lookup(struct gsm_bts_trx *trx, uint8_t chan_nr)
 		lch_idx = 0;	/* TCH/F */	
 		if (ts->pchan != GSM_PCHAN_TCH_F &&
 		    ts->pchan != GSM_PCHAN_PDCH &&
+		    ts->pchan != GSM_PCHAN_cPDCH &&
+		    ts->pchan != GSM_PCHAN_bPDCH &&
 		    ts->pchan != GSM_PCHAN_TCH_F_PDCH)
 			LOGP(DRSL, LOGL_ERROR, "chan_nr=0x%02x but pchan=%u\n",
 				chan_nr, ts->pchan);
@@ -158,6 +160,16 @@ static uint8_t ts2chan_nr(const struct gsm_bts_trx_ts *ts, uint8_t lchan_nr)
 	case GSM_PCHAN_SDCCH8_SACCH8C:
 		cbits = 0x08;
 		cbits += lchan_nr;
+		break;
+	case GSM_PCHAN_cPDCH:
+	case GSM_PCHAN_bPDCH:
+		/*
+		 * There is nothing useful to do here right now. The TS is not
+		 * relevant and thebelow code will not work correctly. In practice
+		 * we should not arrive here.
+		 */
+		LOGP(DRSL, LOGL_ERROR, "bPDCH/cPDCH should not be reached.\n");
+		cbits = 0x1;
 		break;
 	default:
 	case GSM_PCHAN_CCCH:

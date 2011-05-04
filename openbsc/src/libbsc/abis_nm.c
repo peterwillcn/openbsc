@@ -330,6 +330,8 @@ static const enum abis_nm_chan_comb chcomb4pchan[] = {
 	[GSM_PCHAN_TCH_H]	= NM_CHANC_TCHHalf,
 	[GSM_PCHAN_SDCCH8_SACCH8C] = NM_CHANC_SDCCH,
 	[GSM_PCHAN_PDCH]	= NM_CHANC_IPAC_PDCH,
+	[GSM_PCHAN_bPDCH]	= NM_CHANC_IPAC_bPDCH,
+	[GSM_PCHAN_cPDCH]	= NM_CHANC_IPAC_cPDCH,
 	[GSM_PCHAN_TCH_F_PDCH]	= NM_CHANC_IPAC_TCHFull_PDCH,
 	/* FIXME: bounds check */
 };
@@ -2015,6 +2017,8 @@ static int verify_chan_comb(struct gsm_bts_trx_ts *ts, uint8_t chan_comb)
 			case NM_CHANC_IPAC_TCHFull_TCHHalf:
 				return 0;
 			case NM_CHANC_IPAC_PDCH:
+			case NM_CHANC_IPAC_bPDCH:
+			case NM_CHANC_IPAC_cPDCH:
 			case NM_CHANC_IPAC_TCHFull_PDCH:
 				if (ts->trx->nr == 0)
 					return 0;
