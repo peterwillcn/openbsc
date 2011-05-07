@@ -1,7 +1,8 @@
 /* NS-over-IP proxy */
 
 /* (C) 2010 by Harald Welte <laforge@gnumonks.org>
- * (C) 2010 by On-Waves
+ * (C) 2011 by Holger Hans Peter Freyther
+ * (C) 2010-2011 by On-Waves
  * All Rights Reserved
  *
  * This program is free software; you can redistribute it and/or modify
@@ -54,6 +55,15 @@ struct gbprox_peer {
 
 /* Linked list of all Gb peers (except SGSN) */
 static LLIST_HEAD(gbprox_bts_peers);
+
+int dl_skip_ms_ra = 0;
+int dl_skip_prio = 0;
+int dl_skip_imsi = 0;
+int dl_skip_old_tlli = 0;
+int dl_skip_flow_id = 0;
+int dl_skip_lsa = 0;
+int dl_skip_utran = 0;
+int dl_max_pdu_time = 0xFFFF;
 
 /* Find the gbprox_peer by its BVCI */
 static struct gbprox_peer *peer_by_bvci(uint16_t bvci)
@@ -184,10 +194,122 @@ static int gbprox_relay2sgsn(struct msgb *old_msg, uint16_t ns_bvci)
 	return gprs_ns_sendmsg(bssgp_nsi, msg);
 }
 
+/* fix the alignment octet in packets */
+static int gbproxy_align2peer(struct tlv_parsed *tp, struct msgb *old_msg,
+			  struct gbprox_peer *peer, uint16_t ns_bvci)
+{
+	struct msgb *new_msg;
+	struct openbsc_msgb_cb *new_cb;
+	struct bssgp_normal_hdr *bgph = (struct bssgp_normal_hdr *) msgb_bssgph(old_msg);
+	uint8_t *last;
+
+	new_msg = gprs_ns_msgb_alloc();
+	if (!new_msg) {
+		LOGP(DGPRS, LOGL_ERROR, "Failed to allocate new msgb");
+		return -1;
+	}
+
+	last = msgb_put(new_msg, 8);
+	memcpy(last, bgph, 8);
+
+#define NOT_SKIP 0
+#define ADD_IF(skip, tp, msg, ie, last) \
+	if (!skip && TLVP_PRESENT(tp, ie)) \
+		last = msgb_tvlv_put(msg, ie, TLVP_LEN(tp, ie), TLVP_VAL(tp, ie));
+
+#warning "PDU_LIFETIME is not safe for different endian"
+
+	if (TLVP_PRESENT(tp, BSSGP_IE_PDU_LIFETIME)) {
+		if (dl_max_pdu_time != 0xFFFF
+		    && TLVP_LEN(tp, BSSGP_IE_PDU_LIFETIME) == 2) {
+			uint8_t new_data[2];
+			uint16_t life;
+			life = TLVP_VAL(tp, BSSGP_IE_PDU_LIFETIME)[0] << 8;
+			life |= TLVP_VAL(tp, BSSGP_IE_PDU_LIFETIME)[1];
+			printf("LIFE is %d < %d?\n", life, dl_max_pdu_time);
+			if (life > dl_max_pdu_time)
+				life = dl_max_pdu_time;
+			new_data[0] = (life & 0xff00) >> 8;
+			new_data[1] = (life & 0x00ff) >> 0;
+			last = msgb_tvlv_put(new_msg, BSSGP_IE_PDU_LIFETIME,
+					     2, new_data);
+		} else {
+			last = msgb_tvlv_put(new_msg, BSSGP_IE_PDU_LIFETIME,
+				     TLVP_LEN(tp, BSSGP_IE_PDU_LIFETIME),
+				     TLVP_VAL(tp, BSSGP_IE_PDU_LIFETIME));
+		}
+	} 
+
+	ADD_IF(dl_skip_ms_ra, tp, new_msg, BSSGP_IE_MS_RADIO_ACCESS_CAP, last);
+	ADD_IF(dl_skip_prio, tp, new_msg, BSSGP_IE_PRIORITY, last);
+	ADD_IF(NOT_SKIP, tp, new_msg, BSSGP_IE_DRX_PARAMS, last);
+	ADD_IF(dl_skip_imsi, tp, new_msg, BSSGP_IE_IMSI, last);
+	ADD_IF(dl_skip_old_tlli, tp, new_msg, BSSGP_IE_TLLI, last);
+	ADD_IF(dl_skip_flow_id, tp, new_msg, BSSGP_IE_PACKET_FLOW_ID, last);
+	ADD_IF(dl_skip_lsa, tp, new_msg, BSSGP_IE_LSA_INFORMATION, last);
+	ADD_IF(dl_skip_utran, tp, new_msg, BSSGP_IE_SERVICE_UTRAN_CCO, last);
+
+
+	/*
+	 * handle the alignment. By adding this IE we already have added '2' more octests
+         * and need to fill it up. I am too lazy to find a closed formula right now.
+	 */
+	if ((last - new_msg->data) % 4 != 0) {
+		static uint8_t padding[4] = {0,};
+		int rest = (last - new_msg->data) % 4;
+		int len = 0;
+		switch (rest) {
+		case 1:
+			len = 1;
+			break;
+		case 2:
+			len = 0;
+			break;
+		case 3:
+			len = 3;
+			break;
+		default:
+			printf("I am stupid... rest %d\n", rest);
+			break;
+		};
+		last = msgb_tvlv_put(new_msg, BSSGP_IE_ALIGNMENT, len, padding);
+	}
+	if ((last - new_msg->data) % 4 != 0)
+		printf("ALIGNMENT IS STILL BOGUS..\n");
+	ADD_IF(NOT_SKIP, tp, new_msg, BSSGP_IE_LLC_PDU, last);
+#undef ADD_IF
+#undef NOT_SKIP
+
+	/* copy over some state */
+	new_cb = OBSC_MSGB_CB(new_msg);
+	memset(new_cb, 0, sizeof(*new_cb));
+	new_cb->bssgph = new_msg->data;
+	new_cb->nsei = msgb_nsei(old_msg);
+	new_cb->bvci = msgb_bvci(old_msg);
+	new_cb->tlli = msgb_tlli(old_msg);
+
+	/* set the new BVCI/NSEI */
+	msgb_bvci(new_msg) = ns_bvci;
+	msgb_nsei(new_msg) = peer->nsvc->nsei;
+
+	return gprs_ns_sendmsg(bssgp_nsi, new_msg);
+}
+
 /* feed a message down the NS-VC associated with the specified peer */
 static int gbprox_relay2peer(struct msgb *old_msg, struct gbprox_peer *peer,
 			  uint16_t ns_bvci)
 {
+	struct bssgp_normal_hdr *bgph = (struct bssgp_normal_hdr *) msgb_bssgph(old_msg);
+	int data_len = msgb_bssgp_len(old_msg) - sizeof(*bgph);
+	uint8_t pdu_type = bgph->pdu_type;
+
+	if (pdu_type == BSSGP_PDUT_DL_UNITDATA && data_len > 7) {
+		struct tlv_parsed tp;
+		bssgp_tlv_parse(&tp, bgph->data + 7, data_len - 7);
+		if (TLVP_PRESENT(&tp, BSSGP_IE_LLC_PDU))
+			return gbproxy_align2peer(&tp, old_msg, peer, ns_bvci);
+	}
+
 	/* create a copy of the message so the old one can
 	 * be free()d safely when we return from gbprox_rcvmsg() */
 	struct msgb *msg = msgb_copy(old_msg, "msgb_relay2peer");
