@@ -254,8 +254,6 @@ int main(int argc, char **argv)
 	vty_init(&vty_info);
 	bsc_vty_init(&log_info);
 
-	meas_feed_init();
-
 	/* parse options */
 	handle_options(argc, argv);
 
