@@ -2,7 +2,11 @@ INCLUDES = $(all_includes) -I$(top_srcdir)/include -I$(top_builddir)
 AM_CFLAGS=-Wall $(LIBOSMOCORE_CFLAGS) $(LIBOSMOGSM_CFLAGS) $(LIBOSMOVTY_CFLAGS) $(LIBOSMOABIS_CFLAGS) $(COVERAGE_CFLAGS)
 AM_LDFLAGS = $(COVERAGE_LDFLAGS)
 
+if HAVE_LIBCDK
 bin_PROGRAMS = bs11_config isdnsync meas_vis
+else
+bin_PROGRAMS = bs11_config isdnsync
+endif
 
 bs11_config_SOURCES = bs11_config.c
 bs11_config_LDADD = $(top_builddir)/src/libcommon/libcommon.a \
