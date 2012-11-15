@@ -109,15 +109,17 @@ int main(int argc, char **argv)
 	pcap_t *pc;
 	int rc;
 
-	if (argc < 3)
+	if (argc < 3) {
+		fprintf(stderr, "You need to specify PCAP and database file\n");
 		exit(2);
+	}
 
 	pcap_fname = argv[1];
 	db_fname = argv[2];
 
-	pc = pcap_open_offline(fname, errbuf);
+	pc = pcap_open_offline(pcap_fname, errbuf);
 	if (!pc) {
-		fprintf(stderr, "Cannot open %s: %s\n", fname, errbuf);
+		fprintf(stderr, "Cannot open %s: %s\n", pcap_fname, errbuf);
 		exit(1);
 	}
 
