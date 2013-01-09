@@ -314,6 +314,10 @@ int paging_request(struct gsm_network *network, struct gsm_subscriber *subscr,
 		if (!bts)
 			break;
 
+		/* not the right network */
+		if (bts->network_code != subscr->mnc || bts->country_code != subscr->mcc)
+			continue;
+
 		/* skip all currently inactive TRX */
 		if (!trx_is_usable(bts->c0))
 			continue;
@@ -381,6 +385,10 @@ void paging_request_stop(struct gsm_bts *_bts, struct gsm_subscriber *subscr,
 		bts = gsm_bts_by_lac(subscr->net, subscr->lac, bts);
 		if (!bts)
 			break;
+
+		/* not the right network */
+		if (bts->network_code != subscr->mnc || bts->country_code != subscr->mcc)
+			continue;
 
 		/* Stop paging */
 		if (bts != _bts)
