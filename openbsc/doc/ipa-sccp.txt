@@ -1,0 +1,67 @@
+
+IPA SCCP message flow in the BSC
+
+February, 2013		Holger Hans Peter Freyther
+
+CONTENTS
+
+1. SCCP inside the IPA header
+2. Supported SCCP message types
+3. Receiving SCCP messages
+4. Sending SCCP messages
+
+
+1. SCCP inside the IPA header
+
+Many Soft-MSCs implement something that is called SCCP/lite. This means
+that SCCP messages are transported inside a small multiplexing protocol
+over TCP/IP. This is an alternative to a full SIGTRAN implementation.
+
+The multiplexing protocol is the same as used with the sysmoBTS and the
+ip.access nanoBTS. It is a three byte header with two bytes for the length
+in network byte order and one byte for the type. The type to be used for
+SCCP is 0xFD.
+
+	struct ipa_header {
+		uint16_t length_in_network_order;
+		uint8_t  type;
+	} __attribute__((packed));
+
+
+
+2. Supported SCCP message types
+
+To implement GSM 08.08 only a subset of SCCP messages need to be implemented.
+For transporting paging and reset messages SCCP UDT messages are used. For
+the connections with a Mobile Station (MS) a SCCP connection is opened. This
+means that the SCCP CR, SCCP CC, SCCP CREF, SCCP RLC, SCCP RLSD, SCCP DT1
+and SCCP IT messages are supported.
+
+
+3. Receiving SCCP UDT messages
+
+This is an illustration of the flow of messages. The IPA multiplexing protocol
+is used for various protocols. This means there is a central place where the
+multiplexing stream terminates. The stream is terminated in the osmo_bsc_msc.c
+file and the ipaccess_a_fd_cb method. For SCCP messagese the SCCP dispatching
+sccp_system_incoming method is called. This function is implemented in the
+libosmo-sccp library.
+
+To receive UDT messages osmo_bsc_sccp.c:osmo_bsc_sccp_init is using the
+sccp_set_read function to register a callback for UDT messages. The callback
+is msc_sccp_read and it is calling bsc_handle_udt that is implemented in the
+osmo_bsc_bssap.c. This function will handle the GSM 08.08 BSSAP messages.
+Currently only the reset acknowledge and the paging messages are handled.
+
+The BSC currently does not accept incoming SCCP messages and is only opening
+SCCP connections to the MSC. When opening a connection the callbacks for state
+changes (connection confirmed, released, release complete) are set and a routine
+for handling incoming data. This registration is done in the osmo_bsc_sccp.c
+file and the bsc_create_new_connection method. The name of the callback is
+msc_outgoing_sccp_data and this will call bsc_handle_dt1 that is implemented
+in the osmo_bsc_bssap.c file. This will forward the messages to the right
+Mobile Station (MS).
+
+
+4. Sending SCCP messages
+
